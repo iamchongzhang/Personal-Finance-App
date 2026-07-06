@@ -8,6 +8,7 @@ import Dashboard from './components/Dashboard'
 import ExpenseList from './components/ExpenseList'
 import AnalyticsView from './components/AnalyticsView'
 import CategoryManager from './components/CategoryManager'
+import SnakeGame from './components/SnakeGame'
 import { useTheme } from './hooks/useTheme'
 import { expensesToCsv, csvToExpenses } from './utils/csv'
 import { loadUserCategories, mergeCategories } from './data/categories'
@@ -303,6 +304,10 @@ export default function App() {
               onDelete={handleDeleteCategory}
               mergedCategories={mergedCategories}
             />
+          )}
+
+          {page === 'snake' && (
+            <SnakeGame isDark={isDark} />
           )}
         </AppLayout>
       </AntApp>

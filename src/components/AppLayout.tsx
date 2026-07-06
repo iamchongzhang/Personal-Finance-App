@@ -45,6 +45,8 @@ export default function AppLayout({
     { key: 'expenses', icon: <UnorderedListOutlined />, label: 'Expenses' },
     { key: 'analytics', icon: <PieChartOutlined />, label: 'Analytics' },
     { key: 'categories', icon: <TagsOutlined />, label: 'Categories' },
+    { type: 'divider' as const },
+    { key: 'snake', icon: <span className="text-base">🐍</span>, label: 'Snake' },
   ]
 
   const siderBg = isDark
