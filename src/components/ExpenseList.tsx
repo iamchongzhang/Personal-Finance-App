@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Table, Button, Space, Popconfirm } from 'antd'
+import { Table, Button, Space, Popconfirm, message } from 'antd'
 import {
   PlusOutlined,
   EditOutlined,
@@ -10,6 +10,17 @@ import type { ColumnsType } from 'antd/es/table'
 import type { Expense, MergedCategoryNode } from '../types/expense'
 import ExpenseForm from './ExpenseForm'
 
+/**
+ * Props for the ExpenseList component.
+ *
+ * @param expenses         - The full list of expense records to display.
+ * @param loading          - Whether expense data is still being fetched.
+ * @param onAdd            - Async callback to insert a new expense into the database.
+ * @param onEdit           - Async callback to update an existing expense in the database.
+ * @param onDelete         - Async callback to remove an expense by its database ID.
+ * @param mergedCategories - Combined list of built-in and custom categories (used to build column filter options).
+ * @param onAddCategory    - Passed through to ExpenseForm for quick category creation.
+ */
 interface ExpenseListProps {
   expenses: Expense[]
   loading: boolean
@@ -20,6 +31,20 @@ interface ExpenseListProps {
   onAddCategory: (primary: string, secondary: string) => Promise<void>
 }
 
+/**
+ * A filterable, sortable table showing all recorded expenses.
+ *
+ * Key features the user can interact with:
+ * - **Add** — opens the ExpenseForm modal in "new" mode via the "+ Add Expense" button.
+ * - **Edit** — opens the ExpenseForm modal pre-filled with the selected row's data.
+ * - **Delete** — shows a confirmation popover, then permanently removes the expense.
+ * - **Column filters** — filter by primary category using the dropdown in the column header.
+ * - **Column sorting** — sort by date or amount by clicking the column header.
+ * - **Summary bar** — shows the expense count and total amount at the top.
+ *
+ * While data is loading from the database, an Ant Design table spinner is shown.
+ * When there are no expenses, a friendly empty-state message is displayed instead.
+ */
 export default function ExpenseList({
   expenses,
   loading,
@@ -33,21 +58,39 @@ export default function ExpenseList({
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
 
+  /**
+   * Opens the expense form modal in "add" mode (no pre-filled data).
+   */
   const handleAdd = () => {
     setEditingExpense(null)
     setModalOpen(true)
   }
 
+  /**
+   * Opens the expense form modal in "edit" mode, pre-filled with the selected
+   * row's data.
+   */
   const handleEdit = (expense: Expense) => {
     setEditingExpense(expense)
     setModalOpen(true)
   }
 
+  /**
+   * Closes the expense form modal and clears the editing state, returning the
+   * user to the table view.
+   */
   const handleClose = () => {
     setModalOpen(false)
     setEditingExpense(null)
   }
 
+  /**
+   * Saves a new or edited expense to the database.
+   *
+   * If `editingExpense` has an id, this is an edit (UPDATE); otherwise it is a
+   * new expense (INSERT). If the save fails, the modal stays open so the user
+   * doesn't lose their entered data, and an error message is shown.
+   */
   const handleSubmit = async (expense: Expense) => {
     try {
       if (editingExpense?.id) {
@@ -55,21 +98,41 @@ export default function ExpenseList({
       } else {
         await onAdd(expense)
       }
-    } finally {
       handleClose()
+    } catch (err) {
+      console.error('Failed to save expense:', err)
+      message.error('Could not save expense. Please try again.')
     }
   }
 
+  /**
+   * Removes an expense by its database ID.
+   *
+   * Sets a `deletingId` so the specific row's delete button shows a loading
+   * spinner during the request. On failure, resets the spinner and shows an
+   * error message. The `finally` block ensures the spinner always stops
+   * regardless of success or failure.
+   */
   const handleDelete = async (id: number) => {
     setDeletingId(id)
     try {
       await onDelete(id)
+    } catch (err) {
+      console.error('Failed to delete expense:', err)
+      message.error('Could not delete expense. Please try again.')
     } finally {
       setDeletingId(null)
     }
   }
 
-  // Build filter options from merged categories
+  /**
+   * Build the dropdown filter options for the Primary Category column.
+   *
+   * Each option has a `text` (what the user sees in the dropdown) and a `value`
+   * (the raw category string used for matching). These come from the merged
+   * list of built-in and custom categories, so the filter always reflects the
+   * categories the user actually has available.
+   */
   const primaryFilters = useMemo(
     () =>
       mergedCategories.map((c) => ({ text: c.label, value: c.value })),
@@ -130,12 +193,16 @@ export default function ExpenseList({
       width: 120,
       render: (_: unknown, record: Expense) => (
         <Space size="small">
+          {/* Edit button — opens the ExpenseForm modal pre-filled with this row */}
           <Button
             type="text"
             icon={<EditOutlined />}
             onClick={() => handleEdit(record)}
             size="small"
           />
+          {/* Delete button wrapped in Popconfirm for safety.
+              The user must click "Delete" in the popover to confirm.
+              While the delete request is in flight, this specific button shows a spinner. */}
           <Popconfirm
             title="Delete this expense?"
             description="This action cannot be undone."
@@ -161,10 +228,12 @@ export default function ExpenseList({
     },
   ]
 
+  // Sum all expense amounts for the summary bar at the top of the table.
   const totalAmount = expenses.reduce((sum, e) => sum + e.amount, 0)
 
   return (
     <div>
+      {/* Summary bar: expense count + total amount, with an Add button on the right */}
       <div className="flex justify-between items-center mb-4">
         <p style={{ color: 'var(--color-text-secondary, #6b7280)' }} className="text-sm">
           {expenses.length} expense{expenses.length !== 1 ? 's' : ''} · Total{' '}
@@ -200,6 +269,9 @@ export default function ExpenseList({
         }}
       />
 
+      {/* The ExpenseForm modal — shared by both Add and Edit flows.
+          `editingExpense` is null for Add mode, or an expense object for Edit mode.
+          `modalOpen` controls visibility; `handleClose` hides it and resets state. */}
       <ExpenseForm
         open={modalOpen}
         editingExpense={editingExpense}

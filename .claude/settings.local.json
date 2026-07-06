@@ -1,11 +1,39 @@
 {
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Check if the user's Bash command is a git commit. If the command contains \"git commit\" (including \"git commit -m\", \"git commit -a\", etc.), block it and respond with: {\"decision\": \"deny\", \"reason\": \"Direct git commits are blocked in this project. Use /gitcommit or @gitcommit-agent instead — it runs tests and quality checks before committing. Type /gitcommit \\\"your message\\\" to commit safely.\"}. If the command does NOT contain \"git commit\" (e.g., git status, git add, git push, git diff, git log, tsc, cargo, npm, vitest, mkdir, ls, etc.), allow it with: {\"decision\": \"allow\"}."
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       "Bash(npx tsc *)",
       "Bash(cargo build *)",
       "Bash(npx tauri *)",
       "Bash(git add *)",
-      "Bash(git commit -m 'Add category management feature — users can add, rename, and delete custom categories *)"
+      "Bash(git commit *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Read(//c/Users/Pc/.cargo/bin/**)",
+      "Bash(where cargo *)",
+      "Bash(npm install *)",
+      "Bash(npx vitest *)",
+      "Bash(npm test *)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "WebFetch(domain:github.com)"
+    ],
+    "additionalDirectories": [
+      "f:\\Personal Finance App\\.claude\\skills",
+      "C:\\Users\\Pc\\.claude\\skills",
+      "F:\\Personal Finance App\\.claude\\skills",
+      "f:\\Personal Finance App\\.claude"
     ]
   }
 }

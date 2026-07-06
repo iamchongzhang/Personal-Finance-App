@@ -8,6 +8,14 @@ import StatsBar from './StatsBar'
 import { DashboardSkeleton } from './Skeletons'
 import type { Expense } from '../types/expense'
 
+/**
+ * Props for the Dashboard component.
+ *
+ * @param expenses   - The full list of expense records from the database.
+ * @param loading    - Whether expense data is still being fetched.
+ * @param onQuickAdd - Callback that opens the Add Expense modal for quick entry.
+ * @param onViewAll  - Callback that navigates to the full Expense List page.
+ */
 interface DashboardProps {
   expenses: Expense[]
   loading: boolean
@@ -15,6 +23,13 @@ interface DashboardProps {
   onViewAll: () => void
 }
 
+/**
+ * Returns a time-appropriate greeting string based on the current hour.
+ *
+ * - Before noon:      "Good morning"
+ * - Noon to 5 PM:     "Good afternoon"
+ * - After 5 PM:       "Good evening"
+ */
 function getGreeting(): string {
   const hour = new Date().getHours()
   if (hour < 12) return 'Good morning'
@@ -22,6 +37,16 @@ function getGreeting(): string {
   return 'Good evening'
 }
 
+/**
+ * The home screen (Dashboard) of the app.
+ *
+ * Shows a personalized greeting, a monthly spending total, a stats summary bar
+ * (StatsBar), quick-action buttons (Add Expense / View All Expenses), and a
+ * table of the 5 most recent expenses. While data is loading, it displays a
+ * skeleton placeholder instead.
+ *
+ * This is the first page the user sees when opening the app.
+ */
 export default function Dashboard({
   expenses,
   loading,

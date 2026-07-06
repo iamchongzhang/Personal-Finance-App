@@ -32,6 +32,17 @@ function renderPieLabel(props: PieLabelRenderProps): string {
   return `${name} ${(pct * 100).toFixed(0)}%`
 }
 
+/**
+ * Renders a tooltip when the user hovers over a chart element.
+ *
+ * Shows the data point's name (or label for bar charts) and its dollar
+ * amount formatted to two decimal places. If no data is being hovered
+ * the tooltip hides itself by returning `null`.
+ *
+ * The `any` type is used because Recharts' {@link Tooltip} generic types
+ * are complex and vary per chart type (pie vs bar), making proper typing
+ * impractical for a shared tooltip component.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
@@ -58,6 +69,25 @@ interface AnalyticsViewProps {
   loading?: boolean
 }
 
+/**
+ * Renders charts and summary tiles that help you understand where your
+ * money goes.
+ *
+ * ## What it shows
+ * - **Summary tiles** — total spending, average per expense, and how many
+ *   unique categories were used.
+ * - **By Category** — a pie chart that breaks spending down by primary
+ *   category. Click a slice or the legend to see sub-category detail.
+ * - **By Month** — a bar chart of monthly spending over the last 12 months.
+ * - **Top Sub-Categories** — a horizontal bar chart showing the 10 biggest
+ *   primary+secondary category pairs.
+ *
+ * ## How the data is built
+ * The component takes the raw {@link Expense} array and groups amounts by
+ * category and by month. Each group's total is rounded to cents
+ * (`Math.round(value * 100) / 100`) to avoid floating-point display
+ * issues (e.g. showing $12.4000000001 instead of $12.40).
+ */
 export default function AnalyticsView({ expenses, loading }: AnalyticsViewProps) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
 
@@ -75,7 +105,9 @@ export default function AnalyticsView({ expenses, loading }: AnalyticsViewProps)
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
   const COLORS = isDark ? DARK_COLORS : LIGHT_COLORS
 
-  // Pie chart data: by primary category
+  // --- Pie chart data -------------------------------------------------------
+  // Group every expense by its primary category, then sum the amounts.
+  // Round to cents to prevent floating-point quirks (e.g. 12.4000000001).
   const categoryTotals: Record<string, number> = {}
   expenses.forEach((e) => {
     categoryTotals[e.primary_category] =
@@ -85,9 +117,9 @@ export default function AnalyticsView({ expenses, loading }: AnalyticsViewProps)
     .map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 }))
     .sort((a, b) => b.value - a.value)
 
-  // Note: subCatData computed inline in the pie chart section
-
-  // Bar chart data: by month
+  // --- Bar chart data -------------------------------------------------------
+  // Group expenses by calendar month (YYYY-MM). Show the most recent 12
+  // months so the chart doesn't grow too wide over time.
   const monthTotals: Record<string, number> = {}
   expenses.forEach((e) => {
     const month = e.date.substring(0, 7)
@@ -98,8 +130,12 @@ export default function AnalyticsView({ expenses, loading }: AnalyticsViewProps)
     .sort((a, b) => a.month.localeCompare(b.month))
     .slice(-12)
 
+  // --- Summary tiles -------------------------------------------------------
+  // Sum of every expense in the list (unfiltered — all-time total).
   const totalSpending = expenses.reduce((s, e) => s + e.amount, 0)
+  // Average dollar value of a single expense entry.
   const avgPerExpense = expenses.length > 0 ? totalSpending / expenses.length : 0
+  // How many unique primary categories appear in the data.
   const categoryCount = Object.keys(categoryTotals).length
 
   const pieTabContent = (
@@ -130,6 +166,9 @@ export default function AnalyticsView({ expenses, loading }: AnalyticsViewProps)
               cy="50%"
               outerRadius={140}
               label={renderPieLabel}
+              // Recharts' Pie onClick callback uses `any` because the data
+              // shape depends on the data array passed to the Pie component.
+              // There is no generic that captures the exact payload type.
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               onClick={(data: any) => {
                 setSelectedCategory(

@@ -11,7 +11,9 @@ import CategoryManager from './components/CategoryManager'
 import SnakeGame from './components/SnakeGame'
 import { useTheme } from './hooks/useTheme'
 import { expensesToCsv, csvToExpenses } from './utils/csv'
+import { getCurrentMonthKey } from './utils/date'
 import { loadUserCategories, mergeCategories } from './data/categories'
+import { COLOR_PRIMARY } from './theme/colors'
 import type { Expense, UserCategory, MergedCategoryNode } from './types/expense'
 
 let db: Database | null = null
@@ -44,7 +46,9 @@ export default function App() {
       )
       setExpenses(rows)
     } catch (err) {
+      // Log the full error for debugging but don't show technical details to the user
       console.error('Failed to load expenses:', err)
+      message.error('Could not load expenses. Please restart the app.')
     } finally {
       setLoading(false)
     }
@@ -59,8 +63,9 @@ export default function App() {
       setMergedCategories(mergeCategories(cats))
     } catch (err) {
       console.error('Failed to load user categories:', err)
+      message.error('Could not load categories. Please restart the app.')
     }
-  }, [])
+  }, [message])
 
   useEffect(() => {
     getDb()
@@ -121,59 +126,86 @@ export default function App() {
     }
   }, [])
 
-  // Category CRUD
+  // Category CRUD — each function shows user feedback on failure so the user
+  // knows whether their action succeeded or failed.
   const handleAddCategory = useCallback(async (primary: string, secondary: string) => {
-    const database = await getDb()
-    await database.execute(
-      'INSERT INTO user_categories (primary_category, secondary_category) VALUES (?, ?)',
-      [primary, secondary]
-    )
-    await refreshCategories()
-  }, [refreshCategories])
-
-  const handleUpdateCategory = useCallback(async (id: number, primary: string, secondary: string) => {
-    const database = await getDb()
-    // Find the old values
-    const rows = await database.select<{ primary_category: string; secondary_category: string }[]>(
-      'SELECT primary_category, secondary_category FROM user_categories WHERE id = ?',
-      [id]
-    )
-    if (rows.length === 0) return
-    const oldPrimary = rows[0].primary_category
-    const oldSecondary = rows[0].secondary_category
-
-    // Update user_categories row and cascade to expenses in a transaction
-    await database.execute('BEGIN TRANSACTION')
     try {
+      const database = await getDb()
       await database.execute(
-        'UPDATE user_categories SET primary_category = ?, secondary_category = ? WHERE id = ?',
-        [primary, secondary, id]
+        'INSERT INTO user_categories (primary_category, secondary_category) VALUES (?, ?)',
+        [primary, secondary]
       )
-      // If primary category name changed, update all secondaries under the same primary
-      if (oldPrimary !== primary) {
-        await database.execute(
-          'UPDATE user_categories SET primary_category = ? WHERE primary_category = ?',
-          [primary, oldPrimary]
-        )
-      }
-      // Cascade rename in expenses
-      await database.execute(
-        'UPDATE expenses SET primary_category = ?, secondary_category = ? WHERE primary_category = ? AND secondary_category = ?',
-        [primary, secondary, oldPrimary, oldSecondary]
-      )
-      await database.execute('COMMIT')
+      await refreshCategories()
     } catch (err) {
-      await database.execute('ROLLBACK')
+      console.error('Failed to add category:', err)
+      message.error('Could not add category. Please try again.')
       throw err
     }
-    await refreshCategories()
-  }, [refreshCategories])
+  }, [refreshCategories, message])
+
+  /** Updates a category and cascades the rename to all expenses that use it.
+   *  Uses a database transaction so that if any step fails, ALL changes are
+   *  rolled back — preventing the categories and expenses from getting out of sync. */
+  const handleUpdateCategory = useCallback(async (id: number, primary: string, secondary: string) => {
+    try {
+      const database = await getDb()
+      // Find the old values — we need these to know which expenses to cascade-update
+      const rows = await database.select<{ primary_category: string; secondary_category: string }[]>(
+        'SELECT primary_category, secondary_category FROM user_categories WHERE id = ?',
+        [id]
+      )
+      if (rows.length === 0) {
+        message.error('Category not found. It may have been deleted.')
+        return
+      }
+      const oldPrimary = rows[0].primary_category
+      const oldSecondary = rows[0].secondary_category
+
+      // Update user_categories row and cascade to expenses in a transaction.
+      // A transaction ensures all-or-nothing: if the cascade fails, the rename is
+      // rolled back so we don't end up with orphaned categories or expenses.
+      await database.execute('BEGIN TRANSACTION')
+      try {
+        await database.execute(
+          'UPDATE user_categories SET primary_category = ?, secondary_category = ? WHERE id = ?',
+          [primary, secondary, id]
+        )
+        // If primary category name changed, update all secondaries under the same primary
+        if (oldPrimary !== primary) {
+          await database.execute(
+            'UPDATE user_categories SET primary_category = ? WHERE primary_category = ?',
+            [primary, oldPrimary]
+          )
+        }
+        // Cascade rename in expenses so existing entries stay linked to the category
+        await database.execute(
+          'UPDATE expenses SET primary_category = ?, secondary_category = ? WHERE primary_category = ? AND secondary_category = ?',
+          [primary, secondary, oldPrimary, oldSecondary]
+        )
+        await database.execute('COMMIT')
+      } catch (err) {
+        await database.execute('ROLLBACK')
+        throw err
+      }
+      await refreshCategories()
+    } catch (err) {
+      console.error('Failed to update category:', err)
+      message.error('Could not update category. Please try again.')
+      throw err
+    }
+  }, [refreshCategories, message])
 
   const handleDeleteCategory = useCallback(async (id: number) => {
-    const database = await getDb()
-    await database.execute('DELETE FROM user_categories WHERE id = ?', [id])
-    await refreshCategories()
-  }, [refreshCategories])
+    try {
+      const database = await getDb()
+      await database.execute('DELETE FROM user_categories WHERE id = ?', [id])
+      await refreshCategories()
+    } catch (err) {
+      console.error('Failed to delete category:', err)
+      message.error('Could not delete category. Please try again.')
+      throw err
+    }
+  }, [refreshCategories, message])
 
   const handleExport = useCallback(async () => {
     try {
@@ -213,25 +245,33 @@ export default function App() {
       await loadExpenses()
     } catch (err) {
       console.error('Import failed:', err)
+      message.error('Could not import file. Make sure it is a valid CSV exported from this app.')
     }
     e.target.value = ''
   }, [loadExpenses])
 
-  // Monthly total for sidebar
-  const now = new Date()
-  const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  // Monthly total for sidebar — uses the shared date utility to avoid
+  // duplicating the month-key logic across multiple components.
+  const thisMonth = getCurrentMonthKey()
   const monthlyTotal = expenses
     .filter((e) => e.date.startsWith(thisMonth))
     .reduce((s, e) => s + e.amount, 0)
 
+  // Shared theme configuration used by both the loading spinner and the
+  // main app. Extracted to a single object so changes to colors or fonts
+  // only need to be made in one place.
+  const appTheme = {
+    algorithm: isDark ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
+    token: {
+      colorPrimary: COLOR_PRIMARY,
+      borderRadius: 6,
+      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    },
+  }
+
   if (initializing) {
     return (
-      <ConfigProvider
-        theme={{
-          algorithm: isDark ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
-          token: { colorPrimary: '#16a34a', borderRadius: 6, fontFamily: "'Inter', sans-serif" },
-        }}
-      >
+      <ConfigProvider theme={appTheme}>
         <div className="min-h-screen flex items-center justify-center" style={{ background: isDark ? '#0f0f1a' : '#f8fafc' }}>
           <Spin size="large" />
         </div>
@@ -240,16 +280,7 @@ export default function App() {
   }
 
   return (
-    <ConfigProvider
-      theme={{
-        algorithm: isDark ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
-        token: {
-          colorPrimary: '#16a34a',
-          borderRadius: 6,
-          fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-        },
-      }}
-    >
+    <ConfigProvider theme={appTheme}>
       <AntApp>
         <AppLayout
           isDark={isDark}
@@ -302,7 +333,6 @@ export default function App() {
               onAdd={handleAddCategory}
               onUpdate={handleUpdateCategory}
               onDelete={handleDeleteCategory}
-              mergedCategories={mergedCategories}
             />
           )}
 

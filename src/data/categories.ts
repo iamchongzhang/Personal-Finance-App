@@ -7,6 +7,14 @@ export interface CategoryNode {
   children: { value: string; label: string }[]
 }
 
+/**
+ * Factory-default categories shipped with the app.
+ *
+ * Contains 10 top-level (primary) categories and 38 sub-categories total.
+ * These are read-only — users cannot edit or delete them, only add their
+ * own custom categories on top. The data feeds dropdown selectors throughout
+ * the app (expense form, filters, etc.).
+ */
 export const BUILTIN_CATEGORIES: CategoryNode[] = [
   {
     value: 'Food & Dining',
@@ -106,11 +114,38 @@ export const BUILTIN_CATEGORIES: CategoryNode[] = [
 // Backward-compat alias — existing code imports `categories`
 export const categories: CategoryNode[] = BUILTIN_CATEGORIES
 
+/**
+ * Converts the built-in category tree into the merged format used by the UI.
+ * Each category node gets `isBuiltin: true` so the app knows it cannot be
+ * deleted or renamed by the user.
+ */
+function builtinAsMerged(): MergedCategoryNode[] {
+  return BUILTIN_CATEGORIES.map((cat) => ({
+    value: cat.value,
+    label: cat.label,
+    isBuiltin: true,
+    children: cat.children.map((child) => ({
+      value: child.value,
+      label: child.label,
+      isBuiltin: true,
+    })),
+  }))
+}
+
+/**
+ * Given a primary category name, returns the list of secondary (sub) categories
+ * that belong to it. Used by expense forms to show the right dropdown options
+ * when the user selects a primary category.
+ *
+ * If `merged` is provided (which includes both built-in and user-created
+ * categories), it searches that combined list. Otherwise it only searches
+ * the built-in defaults.
+ */
 export function getSecondaryCategories(
   primary: string,
   merged?: MergedCategoryNode[]
 ): { value: string; label: string }[] {
-  const list = merged ?? BUILTIN_CATEGORIES.map((c) => ({ ...c, isBuiltin: true, children: c.children.map((ch) => ({ ...ch, isBuiltin: true })) }))
+  const list = merged ?? builtinAsMerged()
   const cat = list.find((c) => c.value === primary)
   return cat?.children.map(({ value, label }) => ({ value, label })) ?? []
 }
@@ -123,7 +158,11 @@ export async function loadUserCategories(db: Database): Promise<UserCategory[]> 
     return await db.select<UserCategory[]>(
       'SELECT * FROM user_categories ORDER BY primary_category, secondary_category'
     )
-  } catch {
+  } catch (err) {
+    // Log the full error for debugging but return an empty array so the app
+    // does not crash. Callers should handle the empty result gracefully and
+    // show the user a message if needed.
+    console.error('Failed to load user categories from database:', err)
     return []
   }
 }
@@ -133,14 +172,11 @@ export async function loadUserCategories(db: Database): Promise<UserCategory[]> 
  * Built-in categories come first, followed by user-created (alphabetically).
  */
 export function mergeCategories(userCategories: UserCategory[]): MergedCategoryNode[] {
-  const builtin: MergedCategoryNode[] = BUILTIN_CATEGORIES.map((c) => ({
-    value: c.value,
-    label: c.label,
-    isBuiltin: true,
-    children: c.children.map((ch) => ({ value: ch.value, label: ch.label, isBuiltin: true })),
-  }))
+  // Start with all built-in categories (factory defaults)
+  const builtin: MergedCategoryNode[] = builtinAsMerged()
 
-  // Group user categories by primary
+  // Group user-created categories by their primary category so we can
+  // present them as a tree just like the built-in ones
   const grouped: Record<string, { value: string; label: string; children: { value: string; label: string; isBuiltin: boolean }[] }> = {}
   for (const uc of userCategories) {
     if (!grouped[uc.primary_category]) {

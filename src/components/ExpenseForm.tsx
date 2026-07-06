@@ -15,6 +15,16 @@ import dayjs from 'dayjs'
 import { getSecondaryCategories, isBuiltinCategory } from '../data/categories'
 import type { Expense, MergedCategoryNode } from '../types/expense'
 
+/**
+ * Props for the ExpenseForm component.
+ *
+ * @param open             - Whether the modal is visible.
+ * @param editingExpense   - The expense being edited, or null when adding a new one.
+ * @param onClose          - Callback to close the modal without saving.
+ * @param onSubmit         - Callback fired when the form is submitted (handles both add and edit).
+ * @param mergedCategories - Combined list of built-in and custom categories for the dropdowns.
+ * @param onAddCategory    - Callback to persist a newly created custom category.
+ */
 interface ExpenseFormProps {
   open: boolean
   editingExpense: Expense | null
@@ -24,6 +34,17 @@ interface ExpenseFormProps {
   onAddCategory: (primary: string, secondary: string) => Promise<void>
 }
 
+/**
+ * A modal form for adding a new expense or editing an existing one.
+ *
+ * When `editingExpense` is provided, the form is pre-filled with that expense's
+ * data and the title changes to "Edit Expense." When it is `null`, the form
+ * starts blank and the title reads "Add Expense."
+ *
+ * Includes a **Quick Create** secondary modal that lets the user create a new
+ * custom category without leaving the expense form. After creating the category,
+ * it is automatically selected in the primary and secondary dropdowns.
+ */
 export default function ExpenseForm({
   open,
   editingExpense,
@@ -41,6 +62,8 @@ export default function ExpenseForm({
   const [quickModalOpen, setQuickModalOpen] = useState(false)
   const [quickSubmitting, setQuickSubmitting] = useState(false)
 
+  // When the modal opens, either pre-fill the form with the expense being
+  // edited, or reset it to blank defaults for a new entry.
   useEffect(() => {
     if (open) {
       if (editingExpense) {
@@ -67,12 +90,26 @@ export default function ExpenseForm({
     }
   }, [mergedCategories, primaryCategory])
 
+  /**
+   * Called when the user picks a different primary category in the dropdown.
+   *
+   * Loads the matching secondary-category options and clears any previously
+   * selected secondary category so the user cannot leave a stale value.
+   */
   const handlePrimaryChange = (value: string) => {
     setPrimaryCategory(value)
     setSecondaryOptions(getSecondaryCategories(value, mergedCategories))
     form.setFieldValue('secondary_category', undefined)
   }
 
+  /**
+   * Called when the user submits the expense form (Add or Edit).
+   *
+   * Converts the Ant Design form values (which use a dayjs object for the date)
+   * into a plain {@link Expense} object with an ISO date string (`YYYY-MM-DD`).
+   * If `editingExpense` has an id, it is included so the backend knows to UPDATE
+   * instead of INSERT.
+   */
   const handleFinish = (values: {
     amount: number
     primary_category: string
@@ -90,6 +127,14 @@ export default function ExpenseForm({
     })
   }
 
+  /**
+   * Called when the user submits the quick-create category modal.
+   *
+   * Validates the new category names (must not be empty, must not conflict with
+   * built-in categories), calls `onAddCategory` to persist them to the database,
+   * and then auto-selects the newly created category in the parent expense form's
+   * dropdowns so the user can continue without interruption.
+   */
   const handleQuickCreate = async (values: { primary: string; secondary: string }) => {
     const primary = values.primary.trim()
     const secondary = values.secondary.trim()
@@ -208,6 +253,7 @@ export default function ExpenseForm({
               Cancel
             </Button>
             <Button type="primary" htmlType="submit">
+              {/* Button label changes depending on whether we are adding or editing */}
               {editingExpense ? 'Save Changes' : 'Add Expense'}
             </Button>
           </Form.Item>

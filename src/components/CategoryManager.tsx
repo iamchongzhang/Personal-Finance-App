@@ -8,7 +8,7 @@ import {
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import { BUILTIN_CATEGORIES, isBuiltinCategory } from '../data/categories'
-import type { UserCategory, MergedCategoryNode, Expense } from '../types/expense'
+import type { UserCategory, Expense } from '../types/expense'
 
 interface CategoryManagerProps {
   userCategories: UserCategory[]
@@ -17,7 +17,6 @@ interface CategoryManagerProps {
   onAdd: (primary: string, secondary: string) => Promise<void>
   onUpdate: (id: number, primary: string, secondary: string) => Promise<void>
   onDelete: (id: number) => Promise<void>
-  mergedCategories: MergedCategoryNode[]
 }
 
 interface CategoryRow {
@@ -28,6 +27,29 @@ interface CategoryRow {
   userId?: number
 }
 
+/**
+ * Manages expense categories, split across two tables.
+ *
+ * ## Built-in categories (read-only)
+ * These are the factory-default categories that ship with the app (see
+ * {@link BUILTIN_CATEGORIES}). They cannot be edited or deleted — the
+ * table shows a "Locked" badge for each row.
+ *
+ * ## User-created categories (add / edit / delete)
+ * Users can create their own primary+secondary category pairs. The
+ * "My Categories" table shows every custom category and provides
+ * inline Edit and Delete buttons.
+ *
+ * ## Modal form flow
+ * - **Adding** — the user clicks "Add Category", which opens a modal
+ *   with empty fields. On submit the form calls `onAdd`.
+ * - **Editing** — the user clicks the Edit button on a row, which
+ *   pre-fills the modal and calls `onUpdate` on submit.
+ * - **Validation** — the form checks that the name does not collide
+ *   with a built-in category (case-sensitive match against
+ *   {@link isBuiltinCategory}) and that the user isn't creating a
+ *   duplicate of an existing custom category.
+ */
 export default function CategoryManager({
   userCategories,
   expenses,
@@ -35,7 +57,6 @@ export default function CategoryManager({
   onAdd,
   onUpdate,
   onDelete,
-  mergedCategories,
 }: CategoryManagerProps) {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingRow, setEditingRow] = useState<CategoryRow | null>(null)
@@ -81,13 +102,30 @@ export default function CategoryManager({
     ).length
   }
 
+  /**
+   * Handles the modal form submission for both adding and editing a category.
+   *
+   * Validation, in order:
+   * 1. Both fields must be non-empty after trimming whitespace.
+   * 2. The primary+secondary pair must NOT match a built-in category
+   *    (checked via {@link isBuiltinCategory}). This prevents users from
+   *    creating categories that would be indistinguishable from the
+   *    factory defaults.
+   * 3. When adding (not editing), the pair must NOT already exist in
+   *    the user's custom categories — duplicates are rejected.
+   *
+   * If validation passes the appropriate callback (`onAdd` or `onUpdate`)
+   * is called and the modal is closed on success.
+   */
   async function handleFinish(values: { primary: string; secondary: string }) {
     const primary = values.primary.trim()
     const secondary = values.secondary.trim()
 
     if (!primary || !secondary) return
 
-    // Validate: reject if collides with built-in category (only for new or renamed)
+    // Reject if the name collides with a built-in category.
+    // A user cannot create "Food & Dining > Groceries" because it already
+    // exists in the built-in list that ships with the app.
     if (isBuiltinCategory(primary, secondary)) {
       message.error('This category name conflicts with a built-in category. Please use a different name.')
       return
@@ -112,8 +150,12 @@ export default function CategoryManager({
         message.success('Category added')
       }
       handleClose()
-    } catch {
-      message.error('Operation failed. Please try again.')
+    } catch (err) {
+      // Log the full error for debugging; show a generic user-friendly message.
+      // In a more advanced version, we could check the error code and show
+      // specific messages (e.g., "duplicate name" vs "database error").
+      console.error('Failed to save category:', err)
+      message.error('Could not save category. Please try again.')
     } finally {
       setSubmitting(false)
     }
@@ -134,20 +176,36 @@ export default function CategoryManager({
     setEditingRow(null)
   }
 
+  /** Deletes a user-created category. Built-in categories cannot be deleted
+   *  (the delete button is hidden for them), so we only need to check for userId. */
   async function handleDelete(row: CategoryRow) {
     if (!row.userId) return
-    await onDelete(row.userId)
-    message.success('Category deleted')
+    try {
+      await onDelete(row.userId)
+      message.success('Category deleted')
+    } catch (err) {
+      console.error('Failed to delete category:', err)
+      message.error('Could not delete category. Please try again.')
+    }
   }
 
-  const userColumns: ColumnsType<CategoryRow> = [
+  // Shared column definitions that both category tables use. Extracted to
+  // avoid repeating the same Primary/Secondary column config twice.
+  const baseColumns = [
     { title: 'Primary Category', dataIndex: 'primary', key: 'primary', width: 200 },
     { title: 'Secondary Category', dataIndex: 'secondary', key: 'secondary', width: 200 },
+  ]
+
+  // --- Column definitions for the "My Categories" (user-created) table ---
+  // Each row has: primary name, secondary name, a "Custom" type tag,
+  // and action buttons (Edit / Delete with a confirmation popup).
+  const userColumns: ColumnsType<CategoryRow> = [
+    ...baseColumns,
     {
       title: 'Type',
       key: 'type',
       width: 100,
-      render: (_: unknown, record: CategoryRow) => (
+      render: (_: unknown, _record: CategoryRow) => (
         <Tag color="orange">Custom</Tag>
       ),
     },
@@ -188,9 +246,12 @@ export default function CategoryManager({
     },
   ]
 
+  // --- Column definitions for the "Built-in Categories" (read-only) table ---
+  // Same layout as the user table, but the Type column shows "Built-in"
+  // instead of "Custom" and the Actions column shows a "Locked" label
+  // instead of edit/delete buttons.
   const builtinColumns: ColumnsType<CategoryRow> = [
-    { title: 'Primary Category', dataIndex: 'primary', key: 'primary', width: 200 },
-    { title: 'Secondary Category', dataIndex: 'secondary', key: 'secondary', width: 200 },
+    ...baseColumns,
     {
       title: 'Type',
       key: 'type',

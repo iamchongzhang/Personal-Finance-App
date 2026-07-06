@@ -16,17 +16,46 @@ import {
 
 const { Sider, Content } = Layout
 
+/**
+ * Props passed to the main {@link AppLayout} component.
+ *
+ * Each callback connects sidebar buttons to actions defined in the parent
+ * (App.tsx), so the layout stays a pure shell with no business logic of
+ * its own.
+ */
 interface AppLayoutProps {
+  /** Whether the app is in dark mode — controls the theme toggle switch. */
   isDark: boolean
+  /** Called when the user flips the dark/light toggle switch. */
   onToggleTheme: () => void
+  /** Called when the user clicks the Export button (export expenses as CSV). */
   onExport: () => void
+  /** Called when the user clicks the Import button (import expenses from CSV). */
   onImportClick: () => void
+  /** The currently active page key — highlights the matching sidebar menu item. */
   activePage: string
+  /** Called when the user clicks a sidebar menu item to switch pages. */
   onPageChange: (page: string) => void
+  /** Total spending for the current month, displayed at the bottom of the sidebar. */
   monthlyTotal: number
+  /** The page content to render in the main area (Dashboard, Expenses, etc.). */
   children: React.ReactNode
 }
 
+/**
+ * Main layout shell for the entire Personal Finance App.
+ *
+ * Renders a fixed sidebar on the left with:
+ * - The app logo and name
+ * - A navigation menu that switches between pages (Dashboard, Expenses,
+ *   Analytics, Categories, Snake)
+ * - A "This Month" spending total
+ * - Buttons to import and export expense data as CSV files
+ * - A dark/light theme toggle switch and a collapse button
+ *
+ * The rest of the page (the main content area) is rendered via
+ * `props.children` inside a centered container.
+ */
 export default function AppLayout({
   isDark,
   onToggleTheme,
@@ -40,6 +69,8 @@ export default function AppLayout({
   const [collapsed, setCollapsed] = useState(false)
   const { token } = theme.useToken()
 
+  // Menu items for the sidebar navigation. The `key` matches the page name
+  // used in App.tsx routing, so clicking an item calls onPageChange(key).
   const menuItems = [
     { key: 'dashboard', icon: <HomeOutlined />, label: 'Dashboard' },
     { key: 'expenses', icon: <UnorderedListOutlined />, label: 'Expenses' },
@@ -74,7 +105,9 @@ export default function AppLayout({
           overflow: 'auto',
         }}
       >
-        {/* Use flex column to properly stack header, menu, and footer */}
+        {/* Use a flex column to stack three sections vertically:
+            (1) Logo at the top, (2) Navigation menu in the middle (scrollable),
+            (3) Footer at the bottom with totals, import/export, and theme toggle. */}
         <div
           style={{
             display: 'flex',
@@ -82,7 +115,7 @@ export default function AppLayout({
             height: '100%',
           }}
         >
-          {/* Logo */}
+          {/* Section 1 — Logo: shows a "$" icon and the word "Finance" (hidden when collapsed). */}
           <div
             className="flex items-center gap-3 px-4 py-5"
             style={{ borderBottom: `1px solid ${token.colorBorderSecondary}`, flexShrink: 0 }}
@@ -103,7 +136,8 @@ export default function AppLayout({
             )}
           </div>
 
-          {/* Menu — scrollable */}
+          {/* Section 2 — Navigation menu: highlights the current page, scrolls if there
+              are too many items to fit. Clicking an item calls onPageChange(key). */}
           <Menu
             mode="inline"
             selectedKeys={[activePage]}
@@ -118,7 +152,9 @@ export default function AppLayout({
             }}
           />
 
-          {/* Bottom section — fixed to bottom */}
+          {/* Section 3 — Footer: always pinned at the bottom of the sidebar.
+              Contains (in order): this month's spending total, import/export
+              buttons, dark/light theme toggle, and sidebar collapse controls. */}
           <div
             className="px-3 py-4"
             style={{ borderTop: `1px solid ${token.colorBorderSecondary}`, flexShrink: 0 }}
