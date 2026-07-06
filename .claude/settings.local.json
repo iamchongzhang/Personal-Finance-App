@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(cargo build *)",
+      "Bash(npx tauri *)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'Add category management feature — users can add, rename, and delete custom categories *)"
+    ]
+  }
+}

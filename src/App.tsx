@@ -7,9 +7,11 @@ import AppLayout from './components/AppLayout'
 import Dashboard from './components/Dashboard'
 import ExpenseList from './components/ExpenseList'
 import AnalyticsView from './components/AnalyticsView'
+import CategoryManager from './components/CategoryManager'
 import { useTheme } from './hooks/useTheme'
 import { expensesToCsv, csvToExpenses } from './utils/csv'
-import type { Expense } from './types/expense'
+import { loadUserCategories, mergeCategories } from './data/categories'
+import type { Expense, UserCategory, MergedCategoryNode } from './types/expense'
 
 let db: Database | null = null
 
@@ -25,8 +27,11 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [initializing, setInitializing] = useState(true)
   const [page, setPage] = useState('dashboard')
+  const [userCategories, setUserCategories] = useState<UserCategory[]>([])
+  const [mergedCategories, setMergedCategories] = useState<MergedCategoryNode[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toggleTheme, isDark } = useTheme()
+  const { message } = AntApp.useApp()
 
   // Load expenses from DB
   const loadExpenses = useCallback(async () => {
@@ -44,18 +49,30 @@ export default function App() {
     }
   }, [])
 
+  // Load user categories from DB
+  const refreshCategories = useCallback(async () => {
+    try {
+      const database = await getDb()
+      const cats = await loadUserCategories(database)
+      setUserCategories(cats)
+      setMergedCategories(mergeCategories(cats))
+    } catch (err) {
+      console.error('Failed to load user categories:', err)
+    }
+  }, [])
+
   useEffect(() => {
     getDb()
-      .then(() => {
+      .then(async () => {
         setInitializing(false)
-        loadExpenses()
+        await Promise.all([loadExpenses(), refreshCategories()])
       })
       .catch((err) => {
         console.error('Failed to initialize database:', err)
         setInitializing(false)
         setLoading(false)
       })
-  }, [loadExpenses])
+  }, [loadExpenses, refreshCategories])
 
   const handleAdd = useCallback(async (expense: Expense) => {
     try {
@@ -103,6 +120,60 @@ export default function App() {
     }
   }, [])
 
+  // Category CRUD
+  const handleAddCategory = useCallback(async (primary: string, secondary: string) => {
+    const database = await getDb()
+    await database.execute(
+      'INSERT INTO user_categories (primary_category, secondary_category) VALUES (?, ?)',
+      [primary, secondary]
+    )
+    await refreshCategories()
+  }, [refreshCategories])
+
+  const handleUpdateCategory = useCallback(async (id: number, primary: string, secondary: string) => {
+    const database = await getDb()
+    // Find the old values
+    const rows = await database.select<{ primary_category: string; secondary_category: string }[]>(
+      'SELECT primary_category, secondary_category FROM user_categories WHERE id = ?',
+      [id]
+    )
+    if (rows.length === 0) return
+    const oldPrimary = rows[0].primary_category
+    const oldSecondary = rows[0].secondary_category
+
+    // Update user_categories row and cascade to expenses in a transaction
+    await database.execute('BEGIN TRANSACTION')
+    try {
+      await database.execute(
+        'UPDATE user_categories SET primary_category = ?, secondary_category = ? WHERE id = ?',
+        [primary, secondary, id]
+      )
+      // If primary category name changed, update all secondaries under the same primary
+      if (oldPrimary !== primary) {
+        await database.execute(
+          'UPDATE user_categories SET primary_category = ? WHERE primary_category = ?',
+          [primary, oldPrimary]
+        )
+      }
+      // Cascade rename in expenses
+      await database.execute(
+        'UPDATE expenses SET primary_category = ?, secondary_category = ? WHERE primary_category = ? AND secondary_category = ?',
+        [primary, secondary, oldPrimary, oldSecondary]
+      )
+      await database.execute('COMMIT')
+    } catch (err) {
+      await database.execute('ROLLBACK')
+      throw err
+    }
+    await refreshCategories()
+  }, [refreshCategories])
+
+  const handleDeleteCategory = useCallback(async (id: number) => {
+    const database = await getDb()
+    await database.execute('DELETE FROM user_categories WHERE id = ?', [id])
+    await refreshCategories()
+  }, [refreshCategories])
+
   const handleExport = useCallback(async () => {
     try {
       const filePath = await save({
@@ -112,10 +183,12 @@ export default function App() {
       if (!filePath) return // user cancelled
       const csv = expensesToCsv(expenses)
       await writeTextFile(filePath, csv)
+      message.success(`Exported ${expenses.length} expense${expenses.length !== 1 ? 's' : ''} to CSV`)
     } catch (err) {
       console.error('Export failed:', err)
+      message.error('Export failed. Check console for details.')
     }
-  }, [expenses])
+  }, [expenses, message])
 
   const handleImportClick = useCallback(() => {
     fileInputRef.current?.click()
@@ -211,11 +284,25 @@ export default function App() {
               onAdd={handleAdd}
               onEdit={handleEdit}
               onDelete={handleDelete}
+              mergedCategories={mergedCategories}
+              onAddCategory={handleAddCategory}
             />
           )}
 
           {page === 'analytics' && (
             <AnalyticsView expenses={expenses} loading={loading} />
+          )}
+
+          {page === 'categories' && (
+            <CategoryManager
+              userCategories={userCategories}
+              expenses={expenses}
+              loading={loading}
+              onAdd={handleAddCategory}
+              onUpdate={handleUpdateCategory}
+              onDelete={handleDeleteCategory}
+              mergedCategories={mergedCategories}
+            />
           )}
         </AppLayout>
       </AntApp>

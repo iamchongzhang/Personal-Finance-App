@@ -11,6 +11,7 @@ import {
   SunOutlined,
   MoonOutlined,
   DollarOutlined,
+  TagsOutlined,
 } from '@ant-design/icons'
 
 const { Sider, Content } = Layout
@@ -43,6 +44,7 @@ export default function AppLayout({
     { key: 'dashboard', icon: <HomeOutlined />, label: 'Dashboard' },
     { key: 'expenses', icon: <UnorderedListOutlined />, label: 'Expenses' },
     { key: 'analytics', icon: <PieChartOutlined />, label: 'Analytics' },
+    { key: 'categories', icon: <TagsOutlined />, label: 'Categories' },
   ]
 
   const siderBg = isDark

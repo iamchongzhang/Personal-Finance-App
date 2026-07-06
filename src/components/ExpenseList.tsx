@@ -7,9 +7,8 @@ import {
   DollarOutlined,
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
-import type { Expense } from '../types/expense'
+import type { Expense, MergedCategoryNode } from '../types/expense'
 import ExpenseForm from './ExpenseForm'
-import { categories } from '../data/categories'
 
 interface ExpenseListProps {
   expenses: Expense[]
@@ -17,6 +16,8 @@ interface ExpenseListProps {
   onAdd: (expense: Expense) => Promise<void>
   onEdit: (expense: Expense) => Promise<void>
   onDelete: (id: number) => Promise<void>
+  mergedCategories: MergedCategoryNode[]
+  onAddCategory: (primary: string, secondary: string) => Promise<void>
 }
 
 export default function ExpenseList({
@@ -25,6 +26,8 @@ export default function ExpenseList({
   onAdd,
   onEdit,
   onDelete,
+  mergedCategories,
+  onAddCategory,
 }: ExpenseListProps) {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
@@ -66,11 +69,11 @@ export default function ExpenseList({
     }
   }
 
-  // Build filter options from category data
+  // Build filter options from merged categories
   const primaryFilters = useMemo(
     () =>
-      categories.map((c) => ({ text: c.label, value: c.value })),
-    []
+      mergedCategories.map((c) => ({ text: c.label, value: c.value })),
+    [mergedCategories]
   )
 
   const columns: ColumnsType<Expense> = [
@@ -202,6 +205,8 @@ export default function ExpenseList({
         editingExpense={editingExpense}
         onClose={handleClose}
         onSubmit={handleSubmit}
+        mergedCategories={mergedCategories}
+        onAddCategory={onAddCategory}
       />
     </div>
   )

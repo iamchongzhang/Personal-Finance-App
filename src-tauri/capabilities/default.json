@@ -12,6 +12,8 @@
     "sql:allow-select",
     "sql:allow-close",
     "dialog:default",
-    "fs:default"
+    "fs:default",
+    "fs:allow-write-text-file",
+    "fs:allow-write-file"
   ]
 }

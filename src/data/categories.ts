@@ -1,10 +1,13 @@
+import type Database from '@tauri-apps/plugin-sql'
+import type { MergedCategoryNode, UserCategory } from '../types/expense'
+
 export interface CategoryNode {
   value: string
   label: string
   children: { value: string; label: string }[]
 }
 
-export const categories: CategoryNode[] = [
+export const BUILTIN_CATEGORIES: CategoryNode[] = [
   {
     value: 'Food & Dining',
     label: 'Food & Dining',
@@ -100,9 +103,78 @@ export const categories: CategoryNode[] = [
   },
 ]
 
+// Backward-compat alias — existing code imports `categories`
+export const categories: CategoryNode[] = BUILTIN_CATEGORIES
+
 export function getSecondaryCategories(
-  primary: string
+  primary: string,
+  merged?: MergedCategoryNode[]
 ): { value: string; label: string }[] {
-  const cat = categories.find((c) => c.value === primary)
-  return cat?.children ?? []
+  const list = merged ?? BUILTIN_CATEGORIES.map((c) => ({ ...c, isBuiltin: true, children: c.children.map((ch) => ({ ...ch, isBuiltin: true })) }))
+  const cat = list.find((c) => c.value === primary)
+  return cat?.children.map(({ value, label }) => ({ value, label })) ?? []
+}
+
+/**
+ * Load user-created categories from the database.
+ */
+export async function loadUserCategories(db: Database): Promise<UserCategory[]> {
+  try {
+    return await db.select<UserCategory[]>(
+      'SELECT * FROM user_categories ORDER BY primary_category, secondary_category'
+    )
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Merge built-in and user-created categories into a single list.
+ * Built-in categories come first, followed by user-created (alphabetically).
+ */
+export function mergeCategories(userCategories: UserCategory[]): MergedCategoryNode[] {
+  const builtin: MergedCategoryNode[] = BUILTIN_CATEGORIES.map((c) => ({
+    value: c.value,
+    label: c.label,
+    isBuiltin: true,
+    children: c.children.map((ch) => ({ value: ch.value, label: ch.label, isBuiltin: true })),
+  }))
+
+  // Group user categories by primary
+  const grouped: Record<string, { value: string; label: string; children: { value: string; label: string; isBuiltin: boolean }[] }> = {}
+  for (const uc of userCategories) {
+    if (!grouped[uc.primary_category]) {
+      grouped[uc.primary_category] = {
+        value: uc.primary_category,
+        label: uc.primary_category,
+        children: [],
+      }
+    }
+    grouped[uc.primary_category].children.push({
+      value: uc.secondary_category,
+      label: uc.secondary_category,
+      isBuiltin: false,
+    })
+  }
+
+  const userNodes: MergedCategoryNode[] = Object.values(grouped)
+    .sort((a, b) => a.label.localeCompare(b.label))
+    .map((g) => ({
+      value: g.value,
+      label: g.label,
+      isBuiltin: false,
+      children: g.children.sort((a, b) => a.label.localeCompare(b.label)),
+    }))
+
+  return [...builtin, ...userNodes]
+}
+
+/**
+ * Check whether a category name matches a built-in category.
+ */
+export function isBuiltinCategory(primary: string, secondary?: string): boolean {
+  const cat = BUILTIN_CATEGORIES.find((c) => c.value === primary || c.label === primary)
+  if (!cat) return false
+  if (!secondary) return true
+  return cat.children.some((ch) => ch.value === secondary || ch.label === secondary)
 }

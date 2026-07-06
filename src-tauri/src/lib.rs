@@ -18,6 +18,18 @@ pub fn run() {
             );",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 2,
+            description: "create user_categories table for custom category management",
+            sql: "CREATE TABLE IF NOT EXISTS user_categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                primary_category TEXT NOT NULL,
+                secondary_category TEXT NOT NULL,
+                created_at TEXT DEFAULT (datetime('now')),
+                UNIQUE(primary_category, secondary_category)
+            );",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
