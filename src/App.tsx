@@ -1,0 +1,224 @@
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { ConfigProvider, App as AntApp, Spin, theme as antTheme } from 'antd'
+import Database from '@tauri-apps/plugin-sql'
+import { save } from '@tauri-apps/plugin-dialog'
+import { writeTextFile } from '@tauri-apps/plugin-fs'
+import AppLayout from './components/AppLayout'
+import Dashboard from './components/Dashboard'
+import ExpenseList from './components/ExpenseList'
+import AnalyticsView from './components/AnalyticsView'
+import { useTheme } from './hooks/useTheme'
+import { expensesToCsv, csvToExpenses } from './utils/csv'
+import type { Expense } from './types/expense'
+
+let db: Database | null = null
+
+async function getDb(): Promise<Database> {
+  if (!db) {
+    db = await Database.load('sqlite:expenses.db')
+  }
+  return db
+}
+
+export default function App() {
+  const [expenses, setExpenses] = useState<Expense[]>([])
+  const [loading, setLoading] = useState(true)
+  const [initializing, setInitializing] = useState(true)
+  const [page, setPage] = useState('dashboard')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const { toggleTheme, isDark } = useTheme()
+
+  // Load expenses from DB
+  const loadExpenses = useCallback(async () => {
+    setLoading(true)
+    try {
+      const database = await getDb()
+      const rows = await database.select<Expense[]>(
+        'SELECT * FROM expenses ORDER BY date DESC, id DESC'
+      )
+      setExpenses(rows)
+    } catch (err) {
+      console.error('Failed to load expenses:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    getDb()
+      .then(() => {
+        setInitializing(false)
+        loadExpenses()
+      })
+      .catch((err) => {
+        console.error('Failed to initialize database:', err)
+        setInitializing(false)
+        setLoading(false)
+      })
+  }, [loadExpenses])
+
+  const handleAdd = useCallback(async (expense: Expense) => {
+    try {
+      const database = await getDb()
+      const result = await database.execute(
+        'INSERT INTO expenses (amount, primary_category, secondary_category, date, note) VALUES (?, ?, ?, ?, ?)',
+        [expense.amount, expense.primary_category, expense.secondary_category, expense.date, expense.note]
+      )
+      const newExpense: Expense = { ...expense, id: result.lastInsertId as number }
+      setExpenses((prev) => {
+        const idx = prev.findIndex(
+          (e) => e.date < newExpense.date || (e.date === newExpense.date && e.id! < newExpense.id!)
+        )
+        if (idx === -1) return [...prev, newExpense]
+        return [...prev.slice(0, idx), newExpense, ...prev.slice(idx)]
+      })
+    } catch (err) {
+      console.error('Failed to add expense:', err)
+      throw err
+    }
+  }, [])
+
+  const handleEdit = useCallback(async (expense: Expense) => {
+    try {
+      const database = await getDb()
+      await database.execute(
+        'UPDATE expenses SET amount = ?, primary_category = ?, secondary_category = ?, date = ?, note = ?, updated_at = datetime(\'now\') WHERE id = ?',
+        [expense.amount, expense.primary_category, expense.secondary_category, expense.date, expense.note, expense.id]
+      )
+      setExpenses((prev) => prev.map((e) => (e.id === expense.id ? { ...expense } : e)))
+    } catch (err) {
+      console.error('Failed to update expense:', err)
+      throw err
+    }
+  }, [])
+
+  const handleDelete = useCallback(async (id: number) => {
+    try {
+      const database = await getDb()
+      await database.execute('DELETE FROM expenses WHERE id = ?', [id])
+      setExpenses((prev) => prev.filter((e) => e.id !== id))
+    } catch (err) {
+      console.error('Failed to delete expense:', err)
+      throw err
+    }
+  }, [])
+
+  const handleExport = useCallback(async () => {
+    try {
+      const filePath = await save({
+        defaultPath: `expenses_${new Date().toISOString().slice(0, 10)}.csv`,
+        filters: [{ name: 'CSV Files', extensions: ['csv'] }],
+      })
+      if (!filePath) return // user cancelled
+      const csv = expensesToCsv(expenses)
+      await writeTextFile(filePath, csv)
+    } catch (err) {
+      console.error('Export failed:', err)
+    }
+  }, [expenses])
+
+  const handleImportClick = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
+
+  const handleImportFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const text = await file.text()
+      const imported = csvToExpenses(text)
+      if (imported.length === 0) return
+
+      const database = await getDb()
+      for (const exp of imported) {
+        await database.execute(
+          'INSERT INTO expenses (amount, primary_category, secondary_category, date, note) VALUES (?, ?, ?, ?, ?)',
+          [exp.amount, exp.primary_category, exp.secondary_category, exp.date, exp.note]
+        )
+      }
+      await loadExpenses()
+    } catch (err) {
+      console.error('Import failed:', err)
+    }
+    e.target.value = ''
+  }, [loadExpenses])
+
+  // Monthly total for sidebar
+  const now = new Date()
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const monthlyTotal = expenses
+    .filter((e) => e.date.startsWith(thisMonth))
+    .reduce((s, e) => s + e.amount, 0)
+
+  if (initializing) {
+    return (
+      <ConfigProvider
+        theme={{
+          algorithm: isDark ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
+          token: { colorPrimary: '#16a34a', borderRadius: 6, fontFamily: "'Inter', sans-serif" },
+        }}
+      >
+        <div className="min-h-screen flex items-center justify-center" style={{ background: isDark ? '#0f0f1a' : '#f8fafc' }}>
+          <Spin size="large" />
+        </div>
+      </ConfigProvider>
+    )
+  }
+
+  return (
+    <ConfigProvider
+      theme={{
+        algorithm: isDark ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
+        token: {
+          colorPrimary: '#16a34a',
+          borderRadius: 6,
+          fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        },
+      }}
+    >
+      <AntApp>
+        <AppLayout
+          isDark={isDark}
+          onToggleTheme={toggleTheme}
+          onExport={handleExport}
+          onImportClick={handleImportClick}
+          activePage={page}
+          onPageChange={setPage}
+          monthlyTotal={monthlyTotal}
+        >
+          {/* Hidden file input for import */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv"
+            onChange={handleImportFile}
+            style={{ display: 'none' }}
+          />
+
+          {page === 'dashboard' && (
+            <Dashboard
+              expenses={expenses}
+              loading={loading}
+              onQuickAdd={() => setPage('expenses')}
+              onViewAll={() => setPage('expenses')}
+            />
+          )}
+
+          {page === 'expenses' && (
+            <ExpenseList
+              expenses={expenses}
+              loading={loading}
+              onAdd={handleAdd}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+            />
+          )}
+
+          {page === 'analytics' && (
+            <AnalyticsView expenses={expenses} loading={loading} />
+          )}
+        </AppLayout>
+      </AntApp>
+    </ConfigProvider>
+  )
+}

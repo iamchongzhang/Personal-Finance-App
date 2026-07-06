@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+/* System font stack — fast, no external requests */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Light theme (default) */
+:root,
+[data-theme='light'] {
+  --color-bg-primary: #f8fafc;
+  --color-bg-card: #ffffff;
+  --color-bg-sidebar: rgba(255, 255, 255, 0.85);
+  --color-text-primary: #111827;
+  --color-text-secondary: #6b7280;
+  --color-border: rgba(0, 0, 0, 0.06);
+}
+
+/* Dark theme */
+[data-theme='dark'] {
+  --color-bg-primary: #0f0f1a;
+  --color-bg-card: #1a1a2e;
+  --color-bg-sidebar: rgba(20, 20, 30, 0.95);
+  --color-text-primary: #f1f5f9;
+  --color-text-secondary: #94a3b8;
+  --color-border: rgba(255, 255, 255, 0.06);
+}
+
+/* Smooth transitions for theme switching */
+body {
+  font-family: 'Inter', var(--font-sans);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Zebra striping for table rows */
+.odd-row {
+  background: transparent;
+}
+.even-row {
+  background: rgba(0, 0, 0, 0.02);
+}
+[data-theme='dark'] .even-row {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
