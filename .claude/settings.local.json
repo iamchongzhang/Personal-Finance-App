@@ -5,8 +5,9 @@
         "matcher": "Bash",
         "hooks": [
           {
-            "type": "prompt",
-            "prompt": "Check if the user's Bash command is a git commit. If the command contains \"git commit\" (including \"git commit -m\", \"git commit -a\", etc.), block it and respond with: {\"decision\": \"deny\", \"reason\": \"Direct git commits are blocked in this project. Use /gitcommit or @gitcommit-agent instead — it runs tests and quality checks before committing. Type /gitcommit \\\"your message\\\" to commit safely.\"}. If the command does NOT contain \"git commit\" (e.g., git status, git add, git push, git diff, git log, tsc, cargo, npm, vitest, mkdir, ls, etc.), allow it with: {\"decision\": \"allow\"}."
+            "type": "command",
+            "command": "bash -c 'INPUT=$(cat); COMMAND=$(echo \"$INPUT\" | jq -r \".tool_input.command // empty\"); if echo \"$COMMAND\" | grep -qE \"git commit\b\"; then echo \"{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PreToolUse\\\", \\\"permissionDecision\\\": \\\"deny\\\", \\\"permissionDecisionReason\\\": \\\"Direct git commits are blocked. Use /gitcommit or @gitcommit-agent instead.\\\"}}\"; else echo \"{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PreToolUse\\\", \\\"permissionDecision\\\": \\\"allow\\\"}}\"; fi'",
+            "timeout": 10
           }
         ]
       }
